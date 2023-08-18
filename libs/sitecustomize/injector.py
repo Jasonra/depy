@@ -210,10 +210,17 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
                     else:
                         return super().version
 
-            if context.name in self.resolved_reqs and self.resolved_reqs[context.name] == location:
-                real_version = self.lib_metadata[context.name]['version']
-            else:
-                real_version = None
+            real_version = None
+
+            if context.name in self.resolved_reqs and self.resolved_reqs[context.name].startswith(location):
+                if context.name in self.lib_metadata:
+                    real_version = self.lib_metadata[context.name]['version']
+                else:
+                    for module_name, values in self.lib_metadata.items():
+                        if str(values['path']) == location:
+                            self.lib_metadata[context.name] = self.lib_metadata[module_name]
+                            real_version = self.lib_metadata[context.name]['version']
+                            break
 
             return [LocalDistribution(context.name, location, real_version)]
 
