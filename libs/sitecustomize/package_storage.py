@@ -23,7 +23,6 @@ CACHE_FILE_TIMEOUT_S = 60 * 30
 DEFAULT_URL          = 'https://pypi.org/simple'
 
 
-
 class PackageStorage():
     @lru_cache()
     def get_module_structure(self, location: Path, depth_max: int=None) -> dict:
@@ -156,18 +155,34 @@ class PackageStorage():
                         fh.write(dependencies)
 
 
-    def _pip_install(self, name, version, index, location):
+    def _pip_install(self, name, version, location):
         item = name
 
         if version != 'latest':
             item += '==' + version
 
-        cmd = [sys.executable, '-m', 'pip', 'install']
-        cmd.extend(['-I', '--no-dependencies', '--retries', '1', '--no-warn-script-location', '--no-cache-dir', '--disable-pip-version-check', '-i', index, '--target', location, item])
         log('Downloading Python module', name, 'version', version, 'to', location)
 
+        index_offset = 0
+        index        = self._get_index()
+        successful   = False
+
+        while index and not successful:
+            cmd = [sys.executable, '-m', 'pip', 'install']
+            cmd.extend(['-I', '--no-dependencies', '--retries', '1', '--no-warn-script-location', '--no-cache-dir', '--disable-pip-version-check', '-i', index, '--target', location, item])
+
+            try:
+                check_call(cmd, stdout=sys.stderr)
+                index      = None
+                successful = True
+            except:
+                index_offset += 1
+                index = self._get_index(index_offset)
+
+        if not successful:
+            return False
+
         try:
-            check_call(cmd, stdout=sys.stderr)
             self._write_dependencies(name, location)
             installed_file_name = self._get_installed_cache_file(location)
 
@@ -192,14 +207,44 @@ class PackageStorage():
         return sha.hexdigest()
 
 
-    def _get_index(self):
-        return DEFAULT_URL
+    def _get_index(self, offset=0):
+        if offset == 0:
+            return DEFAULT_URL
+
+        other_indexes = os.environ.get('DEPY_INDEXES', '').split(';')
+
+        if offset - 1 < len(other_indexes):
+            index = other_indexes[offset - 1].strip()
+            checked_indexes = set()
+
+            for name in index.split('/'):
+                if name in checked_indexes:
+                    continue
+
+                checked_indexes.add(name)
+                possible_token_file = Path.home() / '.ssh' / ('pypy_' + name.lower())
+
+                if name and possible_token_file.exists():
+                    with open(possible_token_file, 'r') as fh:
+                        token = fh.read().strip()
+
+                    username = os.environ.get('DEPY_USERNAME', 'pat')
+
+                    if index.startswith('https://'):
+                        index = index.replace('https://', 'https://' + username + ':' + token + '@')
+                    else:
+                        index = 'username:' + token + '@' + index
+
+                    break
+
+            return index
+
+        return None
 
 
     def _install(self, name, version, location):
-        index = self._get_index()
         os.makedirs(location, mode=0o777, exist_ok=True)
-        return self._pip_install(name, version, index, location)
+        return self._pip_install(name, version, location)
 
 
     def _get_installed_cache_file(self, location: Path) -> Path:
@@ -260,7 +305,7 @@ class PackageStorage():
         return versions.get(pyhash, [])
 
 
-    def _get_available_versions(self, name: str, path_root: Path):
+    def get_available_versions(self, name: str, path_root: Path):
         import time
 
         try:
@@ -274,40 +319,47 @@ class PackageStorage():
         except:
             pass
 
-        index = self._get_index()
-        cmd   = [sys.executable, '-m', 'pip', 'index', 'versions', '--disable-pip-version-check', '--pre', '-i', index, name]
+        index_offset = 0
+        index        = self._get_index()
+        result       = None
 
-        try:
-            result = check_output(cmd, stderr=STDOUT).decode('utf-8').strip()
+        while index and not result:
+            cmd = [sys.executable, '-m', 'pip', 'index', 'versions', '--disable-pip-version-check', '--pre', '-i', index, name]
 
-            for line in result.splitlines(keepends=False):
-                log('Processing version line:', line, min_level=3)
+            try:
+                result = check_output(cmd, stderr=STDOUT).decode('utf-8').strip()
+            except CalledProcessError:
+                index_offset += 1
+                index = self._get_index(index_offset)
 
-                if line.startswith('Available versions:'):
-                    available = line.replace('Available versions: ', '').split(',')
+        if not result:
+            log('Error: Could not get the available versions for', name)
+            return []
+
+        for line in result.splitlines(keepends=False):
+            log('Processing version line:', line, min_level=3)
+
+            if line.startswith('Available versions:'):
+                available = line.replace('Available versions: ', '').split(',')
+
+                try:
+                    tmp_name = str(available_file_name) + '.' + uuid4().hex
+
+                    with open(tmp_name, 'w') as fh:
+                        log('Writing available version cache', tmp_name, min_level=3)
+                        json.dump(available, fh)
+
+                    os.chmod(tmp_name, 777)
+                    os.replace(tmp_name, available_file_name)
+                except BaseException as e:
+                    log('Exception while writing to the available version cache', e, min_level=1)
 
                     try:
-                        tmp_name = str(available_file_name) + '.' + uuid4().hex
+                        os.unlink(tmp_name)
+                    except:
+                        pass
 
-                        with open(tmp_name, 'w') as fh:
-                            log('Writing available version cache', tmp_name, min_level=3)
-                            json.dump(available, fh)
-
-                        os.chmod(tmp_name, 777)
-                        os.replace(tmp_name, available_file_name)
-                    except BaseException as e:
-                        log('Exception while writing to the available version cache', e, min_level=1)
-
-                        try:
-                            os.unlink(tmp_name)
-                        except:
-                            pass
-
-                    return available
-        except CalledProcessError as exc:
-            log('Error: Could not get the available versions for', name)
-            log(exc.stdout)
-            log(exc.stderr)
+                return available
 
         return []
 
@@ -410,14 +462,14 @@ class PackageStorage():
             version = self._get_proper_version(spec, self._get_installed_versions(path_root))
 
             if not version:
-                version = self._get_proper_version(spec, self._get_available_versions(name, path_root))
+                version = self._get_proper_version(spec, self.get_available_versions(name, path_root))
 
                 if not version:
                     log('No matching versions found for', name, spec, min_level=2)
                     return None
 
         log('Resolved version', name, spec, ' - ', version, min_level=2)
-        return version
+        return version.strip()
 
 
     def cache(self, path_root: Path, name: str, spec: str) -> Path:
