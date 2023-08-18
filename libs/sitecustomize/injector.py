@@ -761,7 +761,11 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
             return []
 
         try:
-            rf = RequirementsFile.from_file(file, include_nested=True)
+            if os.path.basename(file) == 'poetry.lock':
+                from .poetry import PoetryFile
+                rf = PoetryFile.from_lock_file(file)
+            else:
+                rf = RequirementsFile.from_file(file, include_nested=True)
         except:
             return []
 

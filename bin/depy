@@ -9,6 +9,12 @@ do
     if [ -f "$var" ]; then
         req_dir=$(dirname "$var")
 
+        if [ -f "${req_dir}/poetry.lock" ]; then
+            export DEPY_REQS="${req_dir}/poetry.lock"
+            export PYTHONPATH=$DIR/../libs:$PYTHONPATH
+            exec python3 "$@"
+        fi
+
         if [ -f "${req_dir}/requirements.txt" ]; then
             export DEPY_REQS="${req_dir}/requirements.txt"
             export PYTHONPATH=$DIR/../libs:$PYTHONPATH
