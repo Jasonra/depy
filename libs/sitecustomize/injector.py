@@ -601,6 +601,28 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
         return None
 
 
+    def sort_versions(self, spec1, spec2):
+        parsed1 = self.storage.parse_requirement_spec(spec1)
+        parsed2 = self.storage.parse_requirement_spec(spec2)
+
+        if parsed1['op'] == 'any':
+            return 1
+
+        if parsed2['op'] == 'any':
+            return -1
+
+        v1 = Version(parsed1['ver'])
+        v2 = Version(parsed2['ver'])
+
+        if v1 > v2:
+            return 1
+
+        if v2 > v1:
+            return -1
+
+        return 0
+
+
     @profile
     def _install_requirements(self, requirements, processed_files):
         """
@@ -634,29 +656,8 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
                 used_requirements = combined_reqs[req].copy()
                 location          = None
 
-                def sort_versions(spec1, spec2):
-                    parsed1 = self.storage.parse_requirement_spec(spec1)
-                    parsed2 = self.storage.parse_requirement_spec(spec2)
-
-                    if parsed1['op'] == 'any':
-                        return 1
-
-                    if parsed2['op'] == 'any':
-                        return -1
-
-                    v1 = Version(parsed1['ver'])
-                    v2 = Version(parsed2['ver'])
-
-                    if v1 > v2:
-                        return 1
-
-                    if v2 > v1:
-                        return -1
-
-                    return 0
-
                 if CONFLICT_RESOLUTION_MODE == 'newest':
-                    used_requirements = sorted(used_requirements, key=cmp_to_key(sort_versions), reverse=True)
+                    used_requirements = sorted(used_requirements, key=cmp_to_key(self.sort_versions), reverse=True)
 
                 while used_requirements:
                     spec     = ','.join(used_requirements)
@@ -670,7 +671,10 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
                 if location:
                     locations[req] = location
                 else:
-                    errors.append(f'ERROR: Unable to cache {req} : {spec}')
+                    error_message = f'ERROR: Unable to cache {req} : {spec}'
+
+                    if error_message not in errors:
+                        errors.append(error_message)
 
             # We can short-cut this a bit if we're restoring from cached libraries
             if not resolved_requirements:
