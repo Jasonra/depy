@@ -137,7 +137,7 @@ class PackageStorage():
                     metadata_txt = fh.readlines()
 
                 for line in metadata_txt:
-                    match = re.match(r'Requires-Dist:\s*([^\(]+)(?:\s*\(([^\)]+)\))?\s*(;.+)?.*', line.strip())
+                    match = re.match(r'Requires-Dist:\s*([^\(]+?)(?:\s*\(([^\)]+)\))?\s*(;.+)?\s*$', line.strip())
 
                     if match:
                         dependencies += match.group(1).strip()
@@ -146,9 +146,12 @@ class PackageStorage():
                             dependencies += match.group(2).strip()
 
                         if match.group(3):
-                            dependencies += match.group(3)
+                            dependencies += match.group(3).strip()
 
                         dependencies += "\n"
+                    elif 'Requires-Dist' in line:
+                        print('Unknown dependency line:', line)
+                        exit(1)
 
                 if dependencies:
                     with open(location / '.dependencies', 'wt') as fh:
@@ -368,7 +371,16 @@ class PackageStorage():
         match = re.fullmatch(r'^\s*((?:any|[!~=><]+))\s*(.+)?', version)
 
         if match:
-            return {'ver': match.group(2), 'op': match.group(1)}
+            op  = match.group(1)
+            ver = match.group(2)
+
+            if ver and '*' in ver:
+                ver = ver.replace('*', '0')
+
+                if op == '==':
+                    op = '~='
+
+            return {'ver': ver, 'op': op}
         else:
             return {'ver': version, 'op': 'any'}
 
@@ -576,11 +588,12 @@ def remove_tree(cache_location):
 
 def chmod(path: Path, mode: int):
     for root, dirs, files in os.walk(path):
-        for dir in dirs:
-            chmod(os.path.join(root, dir), mode)
+        # for dir in dirs:
+        #     chmod(os.path.join(root, dir), mode)
 
         # set perms on files
         for file in files:
             os.chmod(os.path.join(root, file), mode)
 
     os.chmod(path, mode)
+    os.getcwd

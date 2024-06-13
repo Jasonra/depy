@@ -8,6 +8,7 @@ class PoetryRequirement():
     def __init__(self, package, version, marker=None):
         self.package = package
         self.version = version
+        self.extras  = set()
 
 
     @property
@@ -20,7 +21,7 @@ class PoetryRequirement():
         return ['==' + self.version]
 
 
-    def match_marker(self):
+    def match_marker(self, extras_requested = None):
         return True
 
 

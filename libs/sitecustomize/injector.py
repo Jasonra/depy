@@ -144,6 +144,7 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
         referencing sys.path. This also adds them to the ignored paths so that we don't deal with them in a second way.
         """
         requirement_roots = set()
+        path_additions    = set()
 
         for req, path in sorted(resolved_reqs.items(), key=lambda x: x[1]):
             directory = os.path.dirname(path)
@@ -156,6 +157,15 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
                 directory = os.path.dirname(directory)
 
             requirement_roots.add(directory)
+            binary_dir = os.path.join(directory, 'bin')
+
+            if binary_dir not in path_additions and os.path.isdir(binary_dir):
+                log('Found binary directory', binary_dir, min_level=2)
+                os.environ['PATH'] += ':' + binary_dir
+                path_additions.add(binary_dir)
+
+        if os.environ.get('DEPY_ADD_PP', '1') == '1':
+            os.environ['PYTHONPATH'] += ':'.join(requirement_roots)
 
         sys.path.extend(requirement_roots)
         ignored_paths.update(requirement_roots)
@@ -570,6 +580,15 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
             if req['spec'] not in existing_requirements[req['lib']]:
                 existing_requirements[req['lib']].append(req['spec'])
 
+            # if req['lib'] not in existing_requirements:
+            #     existing_requirements[req['lib']] = {'specs': [], 'extras': set()}
+
+            # if req['spec'] not in existing_requirements[req['lib']]:
+            #     existing_requirements[req['lib']]['specs'].append(req['spec'])
+
+            # if req['extras']:
+            #     existing_requirements[req['lib']]['extras'] = existing_requirements[req['lib']]['extras'].union(req['extras'])
+
         return existing_requirements
 
 
@@ -584,10 +603,11 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
             location = None
             log('Processing Library:', name, spec, min_level=3)
 
-            try:
+            # try:
+            if True:
                 location = self.storage.cache(STORAGE_PATH_PACKAGES, name, spec)
-            except:
-                pass
+            # except:
+            #     pass
 
             processed_reqs[requirement] = location
 
@@ -655,6 +675,7 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
         current_reqs   = deepcopy(combined_reqs)
         processing     = True
         processed_reqs = {}
+        req_history    = [deepcopy(current_reqs)]
 
         while processing:
             processing = False
@@ -685,17 +706,25 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
 
             # We can short-cut this a bit if we're restoring from cached libraries
             if not resolved_requirements:
-                for location in list(locations.values()):
-                    new_reqs      = self._resolve_dependencies(location, processed_files)
+                for lib, location in locations.items():
+                    extras = []
+
+                    for req in requirements:
+                        if req['lib'] == lib:
+                            extras = req.get('extras')
+                            break
+
+                    new_reqs      = self._resolve_dependencies(location, processed_files, extras)
                     combined_reqs = self._combine_requirements(new_reqs, combined_reqs)
 
                 if combined_reqs != current_reqs:
                     processing   = True
                     current_reqs = deepcopy(combined_reqs)
+                    req_history.append(deepcopy(current_reqs))
 
         if errors:
             print('\n'.join(errors), file=sys.stderr)
-            exit(1)
+            sys.exit(1)
 
         return self._get_module_names(locations, requirements_hash, using_cache=bool(resolved_requirements))
 
@@ -767,7 +796,7 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
 
 
     @profile
-    def _process_requirements_file(self, file, processed_files):
+    def _process_requirements_file(self, file, processed_files, extras=[]):
         if file in processed_files:
             return []
 
@@ -791,25 +820,27 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
                     from packaging.markers import Marker
                     req.marker = Marker('python_version <= "3.6"')
 
-            if req.match_marker():
+            if req.name.lower() == 'cryptography':
+                requirements.append({'lib': req.name, 'spec': '>=41.0.2'})
+            elif req.match_marker(extras):
                 if req.specifier:
                     for spec in req.specifier:
-                        requirements.append({'lib': req.name, 'spec': str(spec)})
+                        requirements.append({'lib': req.name, 'spec': str(spec), 'extras': req.extras})
                 else:
-                    requirements.append({'lib': req.name, 'spec': 'any'})
+                    requirements.append({'lib': req.name, 'spec': 'any', 'extras': req.extras})
 
         return requirements
 
 
     @profile
-    def _resolve_dependencies(self, location, processed_files):
+    def _resolve_dependencies(self, location, processed_files, extras):
         """
         Get all library dependencies from the .dependencies file in the cached location and return the set of requirements
         """
         manifest = os.path.join(location, '.dependencies')
 
         if os.path.isfile(manifest):
-            requirements = self._process_requirements_file(manifest, processed_files)
+            requirements = self._process_requirements_file(manifest, processed_files, extras)
 
             if requirements:
                 return requirements
