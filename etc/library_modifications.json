@@ -1,0 +1,32 @@
+{
+    "flask": {
+        "op": "~=",
+        "version": "1.0",
+        "comparison": {
+            "name": "werkzeug",
+            "op": ">",
+            "version": "2.0.3",
+            "new_version": "2.0.3"
+        }
+    },
+    "jinja2": {
+        "op": "~=",
+        "version": "2.0",
+        "comparison": {
+            "name": "markupsafe",
+            "op": ">",
+            "version": "2.0.1",
+            "new_version": "2.0.1"
+        }
+    },
+    "systemrdl-compiler": {
+        "op": "~=",
+        "version": "1.0",
+        "comparison": {
+            "name": "antlr4-python-runtime",
+            "op": ">",
+            "version": "4.9.3",
+            "new_version": "4.9.3"
+        }
+    }
+}

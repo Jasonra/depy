@@ -1,0 +1,35 @@
+#!/bin/bash
+DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+
+# Go through the parameters to find the first input file provided. If there is a requirements.txt in the same directory, use that. If there
+# a poetry.lock file then use that as a fall-back.
+for var in "$@"
+do
+    if [ -f "$var" ]; then
+        req_dir=$(dirname "$var")
+
+        if [ -f "${req_dir}/poetry.lock" ]; then
+            export DEPY_REQS="${req_dir}/poetry.lock"
+        fi
+
+        if [ -z "${DEPY_REQS}" ] && [ -f "${req_dir}/requirements.txt" ]; then
+            export DEPY_REQS="${req_dir}/requirements.txt"
+        fi
+    fi
+done
+
+if [ -z "${DEPY_REQS}" ] && [ -f "${PWD}/poetry.lock" ]; then
+    export DEPY_REQS="${PWD}/poetry.lock"
+fi
+
+if [ -z "${DEPY_REQS}" ] && [ -f "${PWD}/requirements.txt" ]; then
+    export DEPY_REQS="${PWD}/requirements.txt"
+fi
+
+if [ -n "${DEPY_REQS}" ]; then
+    export PYTHONPATH=$DIR/../libs:$PYTHONPATH
+    exec python3 "$@"
+fi
+
+
+exec python3 "$@"
