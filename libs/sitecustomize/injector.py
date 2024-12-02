@@ -76,12 +76,11 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
     """
     Cache and use resolved python requirements on the fly.
 
-    When starting, it looks for PYREQUIREMENTSFILE or PYREQUIREMENTS to be set in the environment. If either of these is set, it will
-    read the requirements file(s). It will then extract all requirements from those files in the form of a library name, a spec, and
-    a marker.
+    When starting, it looks for load the provided 'requirements' file. It will then extract all requirements from those files in the form
+    of a library name, a spec, and a marker.
 
-    ether~=4.0.0; python_version>='3.0'
-    ^---^^-----^  ^-------------------^
+    mysql-connector-python~=9.0.0; python_version>='3.0'
+    ^---------------------^^-----^ ^-------------------^
     lib    spec         marker
 
     The spec and marker are optional components. Once the requirements have been extracted, they will resolved and cached.
@@ -89,7 +88,7 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
     what is available.
 
     Once a set of libraries is resolved, their dependencies are determined and resolved again. This process continues to happen until
-    all requirements and dependencies have been finalized. There are two modes of operation when it comes to conflicts:
+    all requirements and dependencies have been finalized. There are three modes of operation when it comes to conflicts:
         1. newest - If conflicts are found, then the specs are ordered based on the version number such that the largest versions are
             first. From that point, each spec is removed from the end of the list until either a resolution is found or there is only a
             single spec remaining.
@@ -191,8 +190,10 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
 
     @profile
     def find_distributions(self, context):
-        if context.name in self.complete_reqs:
-            location = self.complete_reqs[context.name]
+        context_name = context.name.lower().replace("-","_") if context.name else None
+
+        if context_name in self.complete_reqs:
+            location = self.complete_reqs[context_name]
 
             if location.endswith('.so') or location.endswith('.py'):
                 location = os.path.dirname(location)
@@ -222,14 +223,14 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
 
             real_version = None
 
-            if context.name in self.resolved_reqs and self.resolved_reqs[context.name].startswith(location):
-                if context.name in self.lib_metadata:
-                    real_version = self.lib_metadata[context.name]['version']
+            if context_name in self.resolved_reqs and self.resolved_reqs[context_name].startswith(location):
+                if context_name in self.lib_metadata:
+                    real_version = self.lib_metadata[context_name]['version']
                 else:
                     for module_name, values in self.lib_metadata.items():
                         if str(values['path']) == location:
-                            self.lib_metadata[context.name] = self.lib_metadata[module_name]
-                            real_version = self.lib_metadata[context.name]['version']
+                            self.lib_metadata[context_name] = self.lib_metadata[module_name]
+                            real_version = self.lib_metadata[context_name]['version']
                             break
 
             return [LocalDistribution(context.name, location, real_version)]
@@ -246,26 +247,16 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
         This function will use the stored structure of all libraries and return the appropriate location for the module. If it
         is a module that we don't have in the structure, we attempt to find it and then store it as well so that we have it for
         later reference.
-
-        During library resolution, the order of operations is:
-            1. See if any loadable file is in a system path that is earlier in the list than the specified requirements
-            2. See if any loadable file is in the specified requirements
-            3. See if any loadable file is in the system paths later in the list than the specified requirements
-            4. See if a file exists based on the provided path to this function
-            5. See if a non-loadable directory exists in any of the system path or specified requirements, and load a namespace
-            6. Fall through to Python
         """
 
         log('Finding spec for', fullname, path, target, min_level=3)
 
-        # # Since we load system paths on the fly, we always need to look there to see if a system path contains what we want
+        # Since we load system paths on the fly, we always need to look there to see if a system path contains what we want
         self._find_sys_path_file(fullname)
 
-        # if fullname not in self.complete_reqs and path and '.' in fullname:
         if fullname not in self.complete_reqs and '.' in fullname:
             self._find_path_file(fullname, path)
 
-        # Get a namespace
         if fullname not in self.complete_reqs:
             self._find_appropriate_dir(fullname)
 
@@ -309,7 +300,7 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
     @property
     def library_modifications(self):
         """
-        A set of modifications that are necessary because some packages are not restrictive enough in their requirements
+        A set of modifications that may necessary because some packages are not restrictive enough in their requirements.
         """
         if not self.library_mods:
             with open(Path(os.path.abspath(__file__)).parent.parent.parent / 'etc' / 'library_modifications.json', 'r') as fh:
@@ -320,6 +311,9 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
 
     @profile
     def _is_loadable(self, path):
+        """
+        Determine if a provided path is loadable by Python.
+        """
         return bool(path and path.endswith('.py') or path.endswith('.so'))
 
 
@@ -513,6 +507,9 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
 
     @profile
     def _process_new_sys_path(self, process_location, location, module):
+        """
+        Process a system path that hasn't been seen before, as well as cache the results so that it doesn't have to be examined again.
+        """
         log('Processing new system path', process_location, location, module, min_level=2)
         real_process_location = os.path.realpath(process_location)
 
@@ -549,6 +546,9 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
 
     @profile
     def _load_requirements(self):
+        """
+        Load the requirements file, resolve dependencies, and install any missing ones.
+        """
         log('Loading Requirements', min_level=1)
         files           = self.requirements.split(':')
         requirements    = []
@@ -617,7 +617,7 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
     @profile
     def _read_resolved_requirements(self, location):
         if os.environ.get('DEPY_BYPASS_CACHE'):
-            return 1
+            return None
 
         try:
             with open(location / 'resolution', 'r') as fh:
@@ -820,8 +820,10 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
                     from packaging.markers import Marker
                     req.marker = Marker('python_version <= "3.6"')
 
+            # This module is done here instead of in the modifications because I can't even get versions lower than this to install. Maybe
+            # the library modifications should happen earlier, or even here as well?
             if req.name.lower() == 'cryptography':
-                requirements.append({'lib': req.name, 'spec': '>=41.0.2'})
+                requirements.append({'lib': req.name, 'spec': '==41.0.2'})
             elif req.match_marker(extras):
                 if req.specifier:
                     for spec in req.specifier:

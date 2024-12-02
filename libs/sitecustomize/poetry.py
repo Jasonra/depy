@@ -1,9 +1,3 @@
-import os
-
-
-
-
-
 class PoetryRequirement():
     def __init__(self, package, version, marker=None):
         self.package = package
@@ -50,4 +44,3 @@ class PoetryFile():
             packages.append(PoetryRequirement(package['name'], package['version']))
 
         return PoetryResults(packages)
-

@@ -588,9 +588,6 @@ def remove_tree(cache_location):
 
 def chmod(path: Path, mode: int):
     for root, dirs, files in os.walk(path):
-        # for dir in dirs:
-        #     chmod(os.path.join(root, dir), mode)
-
         # set perms on files
         for file in files:
             os.chmod(os.path.join(root, file), mode)

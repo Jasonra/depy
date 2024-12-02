@@ -1,4 +1,3 @@
-
 # Copyright (c) The pip developers (see AUTHORS.txt file)
 # portions Copyright (C) 2016 Jason R Coombs <jaraco@jaraco.com>
 # portions Copyright (C) nexB Inc. and others
