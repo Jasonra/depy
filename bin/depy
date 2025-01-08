@@ -3,20 +3,22 @@ DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 
 # Go through the parameters to find the first input file provided. If there is a requirements.txt in the same directory, use that. If there
 # a poetry.lock file then use that as a fall-back.
-for var in "$@"
-do
-    if [ -f "$var" ]; then
-        req_dir=$(dirname "$var")
+if [ -z "${DEPY_REQS}" ]; then
+    for var in "$@"
+    do
+        if [ -f "$var" ]; then
+            req_dir=$(dirname "$var")
 
-        if [ -f "${req_dir}/poetry.lock" ]; then
-            export DEPY_REQS="${req_dir}/poetry.lock"
-        fi
+            if [ -f "${req_dir}/poetry.lock" ]; then
+                export DEPY_REQS="${req_dir}/poetry.lock"
+            fi
 
-        if [ -z "${DEPY_REQS}" ] && [ -f "${req_dir}/requirements.txt" ]; then
-            export DEPY_REQS="${req_dir}/requirements.txt"
+            if [ -z "${DEPY_REQS}" ] && [ -f "${req_dir}/requirements.txt" ]; then
+                export DEPY_REQS="${req_dir}/requirements.txt"
+            fi
         fi
-    fi
-done
+    done
+fi
 
 if [ -z "${DEPY_REQS}" ] && [ -f "${PWD}/poetry.lock" ]; then
     export DEPY_REQS="${PWD}/poetry.lock"
