@@ -385,7 +385,7 @@ class PackageStorage():
             return {'ver': version, 'op': 'any'}
 
 
-    def compare_versions(self, version1: str, operation: str, version2: str) -> bool:
+    def compare_versions(self, version1: Version, operation: str, version2: Version) -> bool:
         match = False
 
         if operation == '==':

@@ -780,7 +780,7 @@ class DepyInjectorFinder(importlib.abc.MetaPathFinder):
         updated   = False
 
         for req in requirements:
-            dict_reqs[req['lib']] = req
+            dict_reqs[req['lib'].lower()] = req
 
         for library_name in (self.library_modifications.keys() & dict_reqs.keys()):
             mod = self.library_modifications[library_name]
